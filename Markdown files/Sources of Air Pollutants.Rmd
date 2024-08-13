@@ -1,0 +1,632 @@
+---
+title: "Air Quality North Yorkshire"
+author: "Olasho"
+date: "`r Sys.Date()`"
+output: 
+  html_document: 
+    toc: true
+    highlight: zenburn
+    theme: cerulean
+    number_sections: true
+---
+
+# Document specification
+
+```{r}
+knitr::opts_chunk$set(comment = " ", warning = FALSE, message = "FALSE", fig.show = "hold")
+
+options(knitr.table.format = "html")
+```
+
+
+```{r, results='hide', warning=FALSE, message=FALSE}
+ #install.packages("xlsx")
+library(tidyverse)
+library(sf)
+library(kableExtra)
+library(stringr)
+library(htmlTable)
+library(tableone)
+library(tmap)
+library(paletteer)
+library(ggthemes)
+library(readxl)
+library(rio)
+library(here)
+
+# loading the lsoa shapefile
+
+lsoa_deliverble <- st_read("/CERC_WYCA_work/Data/LSOA_Deliverable_i2.shp") 
+
+WestYorkshire_500mgrid <- st_read("/CERC_WYCA_work/Data/WestYorkshire_500mgrid.SHP")
+
+# inspecting the lsoa_deliverable
+
+head(lsoa_deliverble)
+
+glimpse(lsoa_deliverble)
+
+list(unique(lsoa_deliverble$LA))
+
+# inspecting the WestYorkshire_500mgrid
+
+head(WestYorkshire_500mgrid)
+```
+
+# Selecting the variables used
+
+```{r}
+
+columns_to_remove <- c(9:16, 18:24, 28, 35:37, 39, 42:49, 51:57, 61, 68:70, 72, 75:82, 84:90, 94, 101:103, 105)
+
+lsoa_deliverble_1 <- lsoa_deliverble[ , -columns_to_remove]
+
+st_crs(lsoa_deliverble_1)
+```
+
+# Descriptive analysis
+
+Here, we are going to carry out summary statistics for the pollutants.v
+
+## PM25
+
+```{r, fig.show='hold'}
+# First drop the geometry
+
+lsoa_deliverble_2 <- lsoa_deliverble_1 %>%
+  st_drop_geometry()
+
+# Extract the PM25 variables
+
+PM25_dataset <- lsoa_deliverble_2 %>%
+  select(LA, starts_with("PM25"))
+
+# Creating an empty dataframe
+
+PM25_summary_table <- data.frame(pollutant = character(), mean = numeric(), sd = numeric(), minimum = numeric(), maximum = numeric(), stringsAsFactors = FALSE)
+
+# Define the pollutants
+
+pollutants <- c("PM25_02a", "PM25_02b", "PM25_01", "PM25_03", "PM25_04", "PM25_08a", "PM25_08b", "PM25_08c", "PM25_08d", "PM25_08e", "PM25_08", "PM25_HB", "PM25", "PM25_km2")
+
+# Using a for loop to fill the empty dataframe with PM25
+
+for (pollutant in pollutants) {
+  # Calculate statistics for each pollutant
+  pollutant_stats = PM25_dataset %>%    
+    summarise(mean = mean(get(paste0(pollutant))),
+              sd = sd(get(paste0(pollutant))),
+              minimum = min(get(paste0(pollutant))),
+              maximum = max(get(paste0(pollutant)))
+              ) %>% 
+    mutate(PM25_PM10_NOx_source = pollutant)
+  # Bind the results to the empty dataframe
+  PM25_summary_table <- rbind(PM25_summary_table, pollutant_stats)
+}
+
+# Moving the pollutant column to the begining of the data frame
+
+PM25_summary_table <- PM25_summary_table %>%
+  select(PM25_PM10_NOx_source, everything())
+
+# Renaming the pollutants 
+
+## Define a vector of the new column
+
+PM25_column_name <- c("Total Dometic combustion", "total commercial combustion", "Energy production", "Industrial combustion", "Industrial processes", "Aircraft transport", "Rail transport", "Industrial off-road mobile machinery", "Other off-road mobile machinery", "Transport residual", "Transport total", "Heather burning", "Total all sectors", "Weighted PM25")
+
+## Rename the pollutant columns
+
+PM25_summary_table$PM25_PM10_NOx_source <- PM25_column_name
+
+## Roundingup the table to 3 decimal places
+
+PM25_summary_table[ , 2:5] <- round(PM25_summary_table[ , 2:5], digits = 3)
+
+PM25_summary_table
+```
+
+## PM10
+
+```{r, fig.show='hold'}
+# Extract the PM25 variables
+
+PM10_dataset <- lsoa_deliverble_2 %>%
+  select(LA, starts_with("PM10"))
+
+# Creating an empty dataframe
+
+PM10_summary_table <- data.frame(pollutant = character(), mean = numeric(), sd = numeric(), minimum = numeric(), maximum = numeric(), stringsAsFactors = FALSE)
+
+# Define the pollutants
+
+pollutants <- c("PM10_02a", "PM10_02b", "PM10_01", "PM10_03", "PM10_04", "PM10_08a", "PM10_08b", "PM10_08c", "PM10_08d", "PM10_08e", "PM10_08", "PM10_HB", "PM10")
+
+# Using a for loop to fill the empty dataframe with PM25
+
+for (pollutant in pollutants) {
+  pollutant_stats = PM10_dataset %>%
+    summarise(mean = mean(get(paste0(pollutant))),
+              sd = sd(get(paste0(pollutant))),
+              minimum = min(get(paste0(pollutant))),
+              maximum = max(get(paste0(pollutant)))
+              ) %>% 
+    mutate(PM25_PM10_NOx_source = pollutant)
+  PM10_summary_table <- rbind(PM10_summary_table, pollutant_stats)
+}
+
+# Moving the pollutant column to the beginning of the data frame
+
+PM10_summary_table <- PM10_summary_table %>%
+  select(PM25_PM10_NOx_source, everything())
+
+# Renaming the pollutants 
+
+## Define a vector of the new column
+
+PM10_column_name <- c("Total Dometic combustion", "total commercial combustion", "Energy production", "Industrial combustion", "Industrial processes", "Aircraft transport", "Rail transport", "Industrial off-road mobile machinery", "Other off-road mobile machinery", "Transport residual", "Transport total", "Heather burning", "Total all sectors")
+
+## Rename the pollutant columns
+
+PM10_summary_table$PM25_PM10_NOx_source <- PM10_column_name
+
+## Roundingup the table to 3 decimal places
+
+PM10_summary_table[ , 2:5] <- round(PM10_summary_table[ , 2:5], digits = 3)
+
+PM10_summary_table
+```
+
+## NOx 
+
+```{r, fig.show='hold'}
+# Extract the PM25 variables
+
+NOx_dataset <- lsoa_deliverble_2 %>%
+  select(LA, starts_with("NOx"))
+
+# Creating an empty dataframe
+
+NOx_summary_table <- data.frame(pollutant = character(), mean = numeric(), sd = numeric(), minimum = numeric(), maximum = numeric(), stringsAsFactors = FALSE)
+
+# Define the pollutants
+
+pollutants <- c("NOx_02a", "NOx_02b", "NOx_01", "NOx_03", "NOx_04", "NOx_08a", "NOx_08b", "NOx_08c", "NOx_08d", "NOx_08e", "NOx_08", "NOx_HB", "NOx")
+
+# Using a for loop to fill the empty dataframe with PM25
+
+for (pollutant in pollutants) {
+  pollutant_stats = NOx_dataset %>%
+    summarise(mean = mean(get(paste0(pollutant))),
+              sd = sd(get(paste0(pollutant))),
+              minimum = min(get(paste0(pollutant))),
+              maximum = max(get(paste0(pollutant)))
+              ) %>% 
+    mutate(PM25_PM10_NOx_source = pollutant)
+  NOx_summary_table <- rbind(NOx_summary_table, pollutant_stats)
+}
+
+# Moving the pollutant column to the beginning of the data frame
+
+NOx_summary_table <- NOx_summary_table %>%
+  select(PM25_PM10_NOx_source, everything())
+
+# Renaming the pollutants 
+
+## Define a vector of the new column
+
+NOx_column_name <- c("Total Dometic combustion", "total commercial combustion", "Energy production", "Industrial combustion", "Industrial processes", "Aircraft transport", "Rail transport", "Industrial off-road mobile machinery", "Other off-road mobile machinery", "Transport residual", "Transport total", "Heather burning", "Total all sectors")
+
+## Rename the pollutant columns
+
+NOx_summary_table$PM25_PM10_NOx_source <- NOx_column_name
+
+## Roundingup the table to 3 decimal places
+
+NOx_summary_table[ , 2:5] <- round(NOx_summary_table[ , 2:5], digits = 3)
+
+NOx_summary_table
+
+# Binding all three tables of PM25, PM10, and NOx together
+
+PM25_PM10_NOX_summary_table <- bind_rows(PM25_summary_table, PM10_summary_table, NOx_summary_table)
+```
+
+### Presentation of tables in standard format
+
+```{r, fig.show='hold'}
+PM25_PM10_NOX_summary_table %>%
+  kbl(caption = "Summary table of air pollutants by emmision source") %>%
+  kable_paper("hover") %>%
+  kable_classic_2(full_width = F, html_font = "Cambria")
+```
+
+# Summary statistics by local Authority
+
+```{r, fig.show='hold'}
+View(lsoa_deliverble_1)
+table(lsoa_deliverble_1$LA, lsoa_deliverble_1$PM25_02b)
+```
+
+
+# Spatial analysis
+## By LSOA
+
+First, spatial analysis of the geographical distribution of the total Tonnes of PM25, NOx, PM10 by LSOA was carried out.
+
+```{r, fig.show='hold'}
+# First subset the lsoa_deliverable_1 to just include LSOA and the total PM25
+
+PM25_LSOA_PMTotal <- lsoa_deliverble_1 %>%
+  select(LSOA21CD, LSOA21NM, LA, PM25)
+
+# Using tmap to plot the map of total PM25 distribution by LSOA
+
+PM25_LSOA_PMTotal_map <- tm_shape(PM25_LSOA_PMTotal) +
+  tm_fill("PM25", 
+          style = "kmeans", 
+          palette = paletteer_c("grDevices::Plasma", 30), 
+          legend.is.portrait = TRUE,
+          fill_width = 2) +
+  tm_layout(legend.height = 1,
+            legend.outside.size = 1,
+            legend.outside = TRUE,
+            legend.position = c("right", "top"),
+            frame = TRUE,
+            title = "Annual total tonnes of PM25 by lSOA") +
+  tm_borders(alpha = 0.5,
+             lwd = 2)
+  
+# subset the lsoa_deliverble_1 to just include LSOA and the total PM10
+
+PM10_LSOA_PMTotal <- lsoa_deliverble_1 %>%
+  select(LSOA21CD, LSOA21NM, LA, PM10)
+
+# Using tmap to plot the map of total PM25 distribution by LSOA
+
+PM10_LSOA_PMTotal_map <- tm_shape(PM10_LSOA_PMTotal) +
+  tm_fill("PM10", 
+          style = "kmeans", 
+          palette = paletteer_c("grDevices::Plasma", 30), 
+          legend.is.portrait = TRUE,
+          fill_width = 10) +
+  tm_layout(legend.height = 1,
+            legend.outside.size = 1,
+            legend.outside = TRUE,
+            legend.position = c("right", "top"),
+            frame = TRUE,
+            title = "Annual total tonnes of PM10 by LSOA") +
+  tm_borders(alpha = 0.5,
+             lwd = 2)
+
+# subset the lsoa_deliverble_1 to just include LSOA and the total NOx
+
+NOx_LSOA_PMTotal <- lsoa_deliverble_1 %>%
+  select(LSOA21CD, LSOA21NM, LA, NOx)
+
+# Using tmap to plot the map of total NOx distribution by LSOA
+
+NOx_LSOA_PMTotal_map <- tm_shape(NOx_LSOA_PMTotal) +
+  tm_fill("NOx", 
+          style = "kmeans", 
+          palette = paletteer_c("grDevices::Plasma", 30), 
+          legend.is.portrait = TRUE,
+          fill_width = 10) +
+  tm_layout(legend.height = 1,
+            legend.outside.size = 1,
+            legend.outside = TRUE,
+            legend.position = c("right", "top"),
+            frame = TRUE,
+            title = "Annual total tonnes of NOx by LSOA") +
+  tm_borders(alpha = 0.5,
+             lwd = 2)
+
+# Viewing all three maps
+
+tmap_mode("view")
+a <- tmap_arrange(PM25_LSOA_PMTotal_map, PM10_LSOA_PMTotal_map, NOx_LSOA_PMTotal_map, nrow = 2)
+a
+```
+
+## Spatial facet by LA of PM25, NOx, and PM10
+
+Here, we are going to split the map by LA to have a clearer view of the pollutant's distribution by LSOA for each local AUthority.
+
+```{r, fig.show='hold'}
+
+# PM25
+
+PM25_LSOA_facet <- lsoa_deliverble_1
+  
+# Plotting the map
+
+tmap_mode("plot")
+PM25_LSOA_facet_map <- tm_shape(PM25_LSOA_facet) +
+  tm_fill("PM25", 
+          style = "kmeans", 
+          palette = paletteer_c("grDevices::Plasma", 30), 
+          legend.is.portrait = TRUE,
+          fill_width = 2,
+          legend.hist = TRUE,
+          thres.poly = 0) +
+  tm_layout(title.size = 20,
+            title = "PM25") +
+  tm_borders(alpha = 0.5,
+             lwd = 2) +
+  tm_facets(by = "LA", free.scales = FALSE,
+            free.coords = TRUE,
+            drop.units = TRUE) +
+  tm_compass(type = "8star", size = 2) +
+  tm_scale_bar(widt =0.2)
+
+PM25_LSOA_facet_map
+```
+
+```{r, fig.show='hold'}
+# PM10
+
+## Plotting the map
+
+tmap_mode("plot")
+PM10_LSOA_facet_map <- tm_shape(lsoa_deliverble_1) +
+  tm_fill("PM10", 
+          style = "kmeans", 
+          palette = paletteer_c("grDevices::Plasma", 30), 
+          legend.is.portrait = TRUE,
+          fill_width = 2,
+          legend.hist = TRUE,
+          thres.poly = 0) +
+  tm_layout(title.size = 20,
+            title = "PM10") +
+  tm_borders(alpha = 0.5,
+             lwd = 2) +
+  tm_facets(by = "LA", free.scales = FALSE,
+            free.coords = TRUE,
+            drop.units = TRUE) +
+  tm_compass(type = "8star", size = 2) +
+  tm_scale_bar(widt =0.2)
+
+PM10_LSOA_facet_map
+```
+
+```{r, fig.show='hold'}
+# NOx
+
+## Plotting the map
+
+tmap_mode("plot")
+NOx_LSOA_facet_map <- tm_shape(lsoa_deliverble_1) +
+  tm_fill("NOx", 
+          style = "kmeans", 
+          palette = paletteer_c("grDevices::Plasma", 30), 
+          legend.is.portrait = TRUE,
+          fill_width = 2,
+          legend.hist = TRUE,
+          thres.poly = 0) +
+  tm_layout(title.size = 20,
+            title = "NOx") +
+  tm_borders(alpha = 0.5,
+             lwd = 2) +
+  tm_facets(by = "LA", free.scales = FALSE,
+            free.coords = TRUE,
+            drop.units = TRUE) +
+  tm_compass(type = "8star", size = 2) +
+  tm_scale_bar(widt =0.2)
+
+NOx_LSOA_facet_map
+```
+
+## By Local Authority
+
+Spatial analysis of the geographical distribution of the average PM25, NOx, PM10 by Local Authority was carried out.
+
+```{r, fig.show='hold'}
+# PM25
+
+PM25_LA <- lsoa_deliverble_1 %>%
+  group_by(LA) %>%
+  summarise(mean_PM25 = mean(PM25))
+
+PM25_LA_map <- tm_shape(PM25_LA) +
+  tm_fill("mean_PM25", 
+          style = "kmeans", 
+          palette = paletteer_c("ggthemes::Orange", 30), 
+          legend.is.portrait = TRUE,
+          fill_width = 10) +
+  tm_layout(legend.height = 1,
+            legend.outside.size = 1,
+            legend.outside = TRUE,
+            legend.position = c("right", "top"),
+            frame = TRUE,
+            title = "Average PM25 by LA") +
+  tm_borders(alpha = 0.5,
+             lwd = 3) +
+  tm_text("LA")
+
+# PM10
+
+PM10_LA <- lsoa_deliverble_1 %>%
+  group_by(LA) %>%
+  summarise(mean_PM10 = mean(PM10))
+
+PM10_LA_map <- tm_shape(PM10_LA) +
+  tm_fill("mean_PM10", 
+          style = "kmeans", 
+          palette = paletteer_c("ggthemes::Orange", 30), 
+          legend.is.portrait = TRUE,
+          fill_width = 10) +
+  tm_layout(legend.height = 1,
+            legend.outside.size = 1,
+            legend.outside = TRUE,
+            legend.position = c("right", "top"),
+            frame = TRUE,
+            title = "Average PM10 by LA") +
+  tm_borders(alpha = 0.5,
+             lwd = 3) +
+  tm_text("LA")
+
+# NOx
+
+NOx_LA <- lsoa_deliverble_1 %>%
+  group_by(LA) %>%
+  summarise(mean_NOx = mean(NOx))
+
+NOx_LA_map <- tm_shape(NOx_LA) +
+  tm_fill("mean_NOx", 
+          style = "kmeans", 
+          palette = paletteer_c("ggthemes::Orange", 30), 
+          legend.is.portrait = TRUE,
+          fill_width = 10) +
+  tm_layout(legend.height = 1,
+            legend.outside.size = 1,
+            legend.outside = TRUE,
+            legend.position = c("right", "top"),
+            frame = TRUE,
+            title = "Average NOx by LA") +
+  tm_borders(alpha = 0.5,
+             lwd = 3) +
+  tm_text("LA")
+
+tmap_mode("view")
+tmap_arrange(PM25_LA_map, PM10_LA_map, NOx_LA_map, nrow = 2)
+```
+
+######## Spatial investigation of the source of emmision contributing the most to poor air quality by local authority
+
+Here, we are going to investigate the source of emmision that contributes to most to the pollutants, by overlaying the clusters with the average pollutants produced by the source of emission which includes, total pollutants by domestic combustion, commercial combustion, transport, and heather burning.
+
+```{r, fig.show='hold'}
+# PM25
+## preparing the data
+
+PM25_overlay_data <- lsoa_deliverble_1 %>%
+  group_by(LA) %>%
+  summarise(mean_PM25 = mean(PM25), mean_domestic = mean(PM25_02a), mean_commercial = mean(PM25_02b), mean_transport = mean(PM25_08), mean_heather = mean(PM25_HB))
+
+PM_overlay_result <- st_intersection(PM25_overlay_data)
+
+## Plotting with tmap
+tm_shape(PM25_overlay_data) +
+  tm_dots(size = "mean_PM25", col = "red") +
+  tm_shape(PM25_overlay_data) +
+  tm_dots(size = "mean_domestic", col = "green") +
+  tm_dots(size = "mean_commercial", col = "blue") +
+  tm_dots(size = "mean_transport", col = "yellow") +
+  tm_dots(size = "mean_heather", col = "black") +
+  tm_borders(alpha = 0.5, lwd = 2)
+```
+
+## Spatial analysis of the Bradford district
+
+
+```{r}
+
+shp_file <- st_read("C:/Users/Shobande1/OneDrive - bradford.gov.uk/Documents/Bradford/R language/UK_shapefile/WD_DEC_2022_UK_BFC.shp")
+
+```
+
+## Comparing the correlation between Poor air quality and Standardized Mortality Ratio (SMR) of Respiratory disease
+
+Here we are going to compare the spatial correlation of poor air quality with respiratory disease SMR.
+
+```{r, fig.show='hold'}
+# Importation of the SMR dataset
+
+Resp_SMR <- read_xlsx("C:/Users/Shobande1/OneDrive - bradford.gov.uk/Documents/Bradford/Excel sheets/Resp_SMR.xlsx")
+
+# Joining the Resp_SMR data with the shapefile
+
+Resp_shp <- left_join(shp_file, Resp_SMR, by = c("WD22CD" = "Code"))
+
+# Selecting all the LA in West Yorkshire
+
+Resp_shp_WY <- Resp_shp %>%
+  filter(LAD22NM == "Bradford" | LAD22NM == "Leeds" | LAD22NM == "Kirklees" | LAD22NM == "Calderdale" | LAD22NM == "Wakefield")
+View(Resp_shp_WY)
+# Checking for validity of the spatial object
+
+st_is_valid(Resp_shp_WY)
+
+# From the result above, there appears to be one invalid geometry. To fix, use st_make_valid
+
+Resp_shp_WY_2 <- st_make_valid(Resp_shp_WY)
+
+######################################################## OR
+
+Resp_shp_WY_3 <- st_simplify(Resp_shp_WY)
+
+# plotting the spatial analysis of Respiratory SMR
+
+Resp_shp_WY_map <- tm_shape(Resp_shp_WY_2) +
+  tm_fill("Deaths from respiratory diseases, all ages", 
+          style = "kmeans", 
+          palette = paletteer_c("grDevices::Plasma", 30), 
+          legend.is.portrait = TRUE,
+          fill_width = 2,
+          title = "Respiratory disease SMA by Ward") +
+  tm_borders(alpha = 0.5,
+             lwd = 2)
+
+tmap_mode("view")
+Resp_shp_WY_map
+
+# Spltting the plot by local authority
+
+Resp_shp_WY_map_facet <- tm_shape(Resp_shp_WY) +
+  tm_fill("Deaths from respiratory diseases, all ages", 
+          style = "kmeans", 
+          palette = paletteer_c("grDevices::Plasma", 30), 
+          legend.is.portrait = TRUE,
+          fill_width = 2,
+          legend.hist = TRUE,
+          thres.poly = 0) +
+  tm_layout(title.size = 20,
+            title = "Respiratory disease SMR") +
+  tm_borders(alpha = 0.5,
+             lwd = 2) +
+  tm_facets(by = "LAD22NM", free.scales = FALSE,
+            free.coords = TRUE,
+            drop.units = TRUE) +
+  tm_compass(type = "8star", size = 2) +
+  tm_scale_bar(width =0.2)
+
+tmap_mode("plot")
+Resp_shp_WY_map_facet
+
+# Finding the average Resp SMA mean by LA
+
+Resp_SMA_LA <- Resp_shp_WY %>%
+  group_by(LAD22NM) %>%
+  summarise(mean_SMA = mean(`Deaths from respiratory diseases, all ages`))
+
+# plotting the tmap
+
+Resp_SMA_LA_map <- tm_shape(Resp_SMA_LA) +
+  tm_fill("mean_SMA", 
+          style = "kmeans", 
+          palette = paletteer_c("ggthemes::Orange", 30), 
+          legend.is.portrait = TRUE,
+          fill_width = 10) +
+  tm_layout(legend.height = 1,
+            legend.outside.size = 1,
+            legend.outside = TRUE,
+            legend.position = c("right", "top"),
+            frame = TRUE,
+            title = "Average Respiratory Disease SMA by LA") +
+  tm_borders(alpha = 0.5,
+             lwd = 3) +
+  tm_text("LAD22NM")
+
+tmap_mode("view")
+Resp_SMA_LA_map
+
+# viewing the map alongside the air pollutants
+
+b <- tmap_arrange(PM25_LA_map, PM10_LA_map, NOx_LA_map, Resp_SMA_LA_map, nrow = 2)
+```
+
+
+```{r}
+tmap_save(Resp_SMA_LA_map, filename = "C:/Users/Shobande1/Desktop/Resp_SMA_LA_map.html", dpi = 3, height = 1000, width = 1000, units = "px", filetype = "html")
+```
+
